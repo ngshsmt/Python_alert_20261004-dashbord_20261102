@@ -1,4 +1,4 @@
-# Pythonメインスクリプト（screener.py）
+# Pythonメインスクリプト（screener.py）_1.0.1
 
 import datetime
 import os
@@ -7,7 +7,7 @@ from email.header import Header
 from email.mime.text import MIMEText
 import requests
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
 import yfinance as yf
 
 # ==========================================
@@ -23,46 +23,85 @@ SMTP_PASS = os.environ.get("SMTP_PASS")
 MAIL_TO = os.environ.get("MAIL_TO")
 
 # ==========================================
-# 2. テクニカル指標計算 & シグナル判定関数
+# 2. Supertrend自作計算ロジック (10, 3.0)
+# ==========================================
+def calculate_supertrend(df, period=10, multiplier=3.0):
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+    
+    # True Range & ATR の計算
+    price_diff1 = high - low
+    price_diff2 = (high - close.shift(1)).abs()
+    price_diff3 = (low - close.shift(1)).abs()
+    true_range = pd.concat([price_diff1, price_diff2, price_diff3], axis=1).max(axis=1)
+    atr = true_range.ewm(alpha=1/period, adjust=False).mean()
+
+    # Upper / Lower Band の計算
+    hl2 = (high + low) / 2
+    basic_ub = hl2 + (multiplier * atr)
+    basic_lb = hl2 - (multiplier * atr)
+
+    final_ub = np.zeros(len(df))
+    final_lb = np.zeros(len(df))
+    st_dir = np.zeros(len(df))
+
+    for i in range(1, len(df)):
+        # Final Upper Band
+        if basic_ub.iloc[i] < final_ub[i-1] or close.iloc[i-1] > final_ub[i-1]:
+            final_ub[i] = basic_ub.iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
+
+        # Final Lower Band
+        if basic_lb.iloc[i] > final_lb[i-1] or close.iloc[i-1] < final_lb[i-1]:
+            final_lb[i] = basic_lb.iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+
+        # Direction (1: Buy, -1: Sell)
+        if st_dir[i-1] == 1:
+            if close.iloc[i] < final_lb[i]:
+                st_dir[i] = -1
+            else:
+                st_dir[i] = 1
+        else:
+            if close.iloc[i] > final_ub[i]:
+                st_dir[i] = 1
+            else:
+                st_dir[i] = -1
+
+    st_val = np.where(st_dir == 1, final_lb, final_ub)
+    return pd.Series(st_dir, index=df.index), pd.Series(st_val, index=df.index)
+
+# ==========================================
+# 3. テクニカル指標計算 & シグナル判定関数
 # ==========================================
 def analyze_ticker(ticker_symbol):
-    """
-    指定された銘柄のデータを取得し、Supertrend + Simple MAのシグナルを判定する
-    """
     try:
-        # 直近100日分のデータ取得（SMA50やSupertrend計算に十分な期間）
         df = yf.download(ticker_symbol, period="100d", interval="1d", progress=False)
         if df.empty or len(df) < 50:
             return None
 
-        # yfinanceのMultiIndexカラム対策
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
         close = df['Close']
-        high = df['High']
-        low = df['Low']
 
         # 移動平均線
-        df['SMA5'] = ta.sma(close, length=5)
-        df['SMA10'] = ta.sma(close, length=10)
-        df['SMA20'] = ta.sma(close, length=20)
-        df['SMA50'] = ta.sma(close, length=50)
+        df['SMA5'] = close.rolling(window=5).mean()
+        df['SMA10'] = close.rolling(window=10).mean()
+        df['SMA20'] = close.rolling(window=20).mean()
+        df['SMA50'] = close.rolling(window=50).mean()
 
-        # Supertrend (Period=10, Factor=3.0)
-        st_df = ta.supertrend(high, low, close, length=10, multiplier=3.0)
-        # st_dfのカラム例: SUPERT_10_3.0, SUPERTd_10_3.0 (1=Buy, -1=Sell)
-        st_dir_col = [col for col in st_df.columns if col.startswith("SUPERTd")][0]
-        st_val_col = [col for col in st_df.columns if col.startswith("SUPERT_") and not col.startswith("SUPERTd")][0]
-
-        df['ST_Direction'] = st_df[st_dir_col] # 1: Buy(isStBuy), -1: Sell
-        df['ST_Value'] = st_df[st_val_col]     # 下限バンド（損切り価格目安）
+        # Supertrend (10, 3.0)
+        df['ST_Direction'], df['ST_Value'] = calculate_supertrend(df, period=10, multiplier=3.0)
 
         # パーフェクトオーダー条件
         df['isSimplePO'] = (df['SMA5'] > df['SMA10']) & (df['SMA10'] > df['SMA20']) & (close > df['SMA50'])
         df['isStBuy'] = df['ST_Direction'] == 1
 
-        # 条件判定用（前日との変化）
+        # 条件判定用
         df['st_change'] = df['ST_Direction'].diff()
         df['sma_cross'] = (df['SMA5'] > df['SMA10']) & (df['SMA5'].shift(1) <= df['SMA10'].shift(1))
 
@@ -71,12 +110,9 @@ def analyze_ticker(ticker_symbol):
         # 買い手仕舞い条件
         df['longExitCond'] = (df['SMA5'] < df['SMA20']) | (~df['isStBuy'])
 
-        # 直近（大引け時点）の行を取得
         latest = df.iloc[-1]
         prev = df.iloc[-2]
 
-        # 状態判定（簡易版）
-        # ※本来は全期間ループで正確なシグナル転換を追うが、当日発生シグナルを判定
         signal = None
         if latest['longEntryCond']:
             signal = "Long"
@@ -95,12 +131,9 @@ def analyze_ticker(ticker_symbol):
         return None
 
 # ==========================================
-# 3. Notion DB登録関数
+# 4. Notion DB登録関数
 # ==========================================
 def push_to_notion(result_data, company_name=""):
-    """
-    Notion APIを使ってデータベースへレコードを追加する
-    """
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
         print("Notion API credentials not provided. Skipping Notion push.")
         return
@@ -122,7 +155,7 @@ def push_to_notion(result_data, company_name=""):
             "日付": {"date": {"start": today_str}},
             "シグナル": {"select": {"name": result_data['signal']}},
             "終値": {"number": result_data['close']},
-            "ステータス": {"status": {"name": "未対応"}}
+            "ステータス": {"select": {"name": "未対応"}}
         }
     }
 
@@ -131,17 +164,13 @@ def push_to_notion(result_data, company_name=""):
         print(f"Failed to push to Notion: {res.text}")
 
 # ==========================================
-# 4. メール送信関数
+# 5. メール送信関数
 # ==========================================
 def send_email(signals_dict):
-    """
-    指定のフォーマットでメールを送信する
-    """
     if not SMTP_USER or not SMTP_PASS or not MAIL_TO:
         print("SMTP credentials not provided. Skipping email dispatch.")
         return
 
-    # 曜日変換
     weekdays_jp = ["月", "火", "水", "木", "金", "土", "日"]
     now_jst = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     date_str = now_jst.strftime("%Y/%m/%d")
@@ -149,7 +178,6 @@ def send_email(signals_dict):
 
     subject = f"{date_str}({weekday_str})の対象銘柄コード"
 
-    # リスト文字列作成
     long_list = "\n".join(signals_dict["Long"]) if signals_dict["Long"] else ""
     short_list = "\n".join(signals_dict["Short"]) if signals_dict["Short"] else ""
     exit_l_list = "\n".join(signals_dict["Exit L"]) if signals_dict["Exit L"] else ""
@@ -185,17 +213,15 @@ def send_email(signals_dict):
         print(f"Failed to send email: {e}")
 
 # ==========================================
-# 5. メイン実行フロー
+# 6. メイン実行フロー
 # ==========================================
 def main():
-    # 1. watchlist.csv 読み込み
     csv_path = "watchlist.csv"
     if not os.path.exists(csv_path):
         print(f"{csv_path} not found.")
         return
 
     df_watchlist = pd.read_csv(csv_path)
-    # カラム名が 'code' または 'ticker' に対応
     code_col = 'code' if 'code' in df_watchlist.columns else df_watchlist.columns[0]
     codes = df_watchlist[code_col].astype(str).tolist()
 
@@ -209,19 +235,15 @@ def main():
     print(f"Starting analysis for {len(codes)} stocks...")
 
     for code in codes:
-        # 日本株用に '.T' 付与（すでに付いている場合はそのまま）
         ticker = code if code.endswith(".T") else f"{code}.T"
         res = analyze_ticker(ticker)
 
         if res and res['signal']:
             print(f"Signal detected: {res['code']} -> {res['signal']}")
-            # Notionへ登録
             push_to_notion(res)
-            # メール通知用サマリーに追加
             if res['signal'] in signals_summary:
                 signals_summary[res['signal']].append(res['code'])
 
-    # 2. メール送信
     send_email(signals_summary)
     print("Processing completed.")
 
