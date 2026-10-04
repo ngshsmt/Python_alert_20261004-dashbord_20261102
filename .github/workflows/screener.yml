@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas yfinance pandas-ta requests
+          pip install pandas yfinance pandas_ta requests
 
       - name: Run screener script
         env:
