@@ -1,4 +1,4 @@
-# Pythonメインスクリプト（screener.py）_1.0.1
+# Pythonメインスクリプト（screener.py）_1.0.2
 
 import datetime
 import os
@@ -155,7 +155,7 @@ def push_to_notion(result_data, company_name=""):
             "日付": {"date": {"start": today_str}},
             "シグナル": {"select": {"name": result_data['signal']}},
             "終値": {"number": result_data['close']},
-            "ステータス": {"select": {"name": "未対応"}}
+            "ステータス": {"status": {"name": "未対応"}}
         }
     }
 
@@ -216,7 +216,7 @@ def send_email(signals_dict):
 # 6. メイン実行フロー
 # ==========================================
 def main():
-    csv_path = "watchlist.csv"
+    csv_path = "watchlist_20261004.csv"
     if not os.path.exists(csv_path):
         print(f"{csv_path} not found.")
         return
