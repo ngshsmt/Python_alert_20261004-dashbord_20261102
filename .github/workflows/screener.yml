@@ -1,6 +1,6 @@
 # .github/workflows/screener.yml
-# GitHub Actions ワークフロー_v.1.0.1
-# 実行時刻を変更（混雑時間を下げて自動実行を行うため）
+# GitHub Actions ワークフロー_v.1.0.2
+# v.1.0.1でGithubを起動したらエラーが発生したため
 
 name: Stock Screener & Signal Alert
 
@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas yfinance pandas_ta requests
+          pip install pandas yfinance requests numpy
 
       - name: Run screener script
         env:
