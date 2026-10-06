@@ -1,10 +1,14 @@
+# .github/workflows/screener.yml
+# GitHub Actions ワークフロー_v.1.0.2
+# v.1.0.1でGithubを起動したらエラーが発生したため
+
 name: Stock Screener & Signal Alert
 
 on:
   schedule:
     # 毎日 16:12 JST に実行 (UTC基準では 07:12 UTC)
     - cron: '12 7 * * 1-5'
-  workflow_dispatch:
+  workflow_dispatch: # GitHubの画面から手動実行できるようにする設定
 
 jobs:
   run-screener:
