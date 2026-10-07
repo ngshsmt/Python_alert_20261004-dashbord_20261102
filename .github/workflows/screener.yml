@@ -1,14 +1,16 @@
 # .github/workflows/screener.yml
-# GitHub Actions ワークフロー_v.1.0.2
-# v.1.0.1でGithubを起動したらエラーが発生したため
+# GitHub Actions ワークフロー_v.1.0.3
+# cronだと遅延するため外部Webフック起動への切替
 
 name: Stock Screener & Signal Alert
 
 on:
   schedule:
-    # 毎日 16:12 JST に実行 (UTC基準では 07:12 UTC)
-    - cron: '12 7 * * 1-5'
-  workflow_dispatch: # GitHubの画面から手動実行できるようにする設定
+    # 予備のcron（15:35 JST = 06:35 UTC）
+    - cron: '35 6 * * 1-5'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [trigger-screener]
 
 jobs:
   run-screener:
