@@ -105,7 +105,7 @@ def calculate_supertrend(df, period=10, multiplier=3.0):
 # 3. Notion過去ステータス照合関数
 # ==========================================  
     def get_latest_signal_from_notion(code):
-    """Notion DBから対象銘柄の最新レコードのシグナルを取得する"""
+# Notion DBから対象銘柄の最新レコードのシグナルを取得する
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
         return None
 
