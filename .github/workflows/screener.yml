@@ -5,10 +5,13 @@
 name: Stock Screener & Signal Alert
 
 on:
-  schedule:
-    # 予備のcron（15:35 JST = 06:35 UTC）
-    - cron: '35 6 * * 1-5'
+  # 自動実行(20261010停止)
+#  schedule:
+#    # 予備のcron（15:35 JST = 06:35 UTC）
+#    - cron: '35 6 * * 1-5'
+  # 手動実行
   workflow_dispatch:
+  # 外部サービスで実行(cron-job.org)
   repository_dispatch:
     types: [trigger-screener]
 
