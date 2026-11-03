@@ -116,7 +116,7 @@ NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 
-@st.cache_data(ttl=300) # 5分間データ更新キャッシュ
+@st.cache_data(ttl=300) # 5分間キャッシュ
 def load_and_process_data():
     """Notion DB (全シグナル) と スプレッドシート (実トレード) からデータを取得・照合"""
     
@@ -224,7 +224,13 @@ def load_and_process_data():
     df_bm = calculate_trade_performance(df_bm, is_benchmark=True)
     df_user = calculate_trade_performance(df_user, is_benchmark=False)
 
-    return df_bm, df_user
+    # ------------------------------------------------
+    # 最終同期時刻の取得（JST）
+    # ------------------------------------------------
+    now_jst = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
+    fetch_time = now_jst.strftime("%Y-%m-%d %H:%M:%S JST")
+
+    return df_bm, df_user, fetch_time
 
 # データ読み込み
 df_bm_all, df_user_all = load_and_process_data()
@@ -240,9 +246,12 @@ def load_and_process_data():
     fetch_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S JST")
     return df_bm, df_user, fetch_time
 
-# 呼び出し側
+# データ読み込み（3つの戻り値を確実に受け取る）
 df_bm_all, df_user_all, last_sync_time = load_and_process_data()
 
+# ==========================================
+# メイン画面 & 期間フィルターヘッダー
+# ==========================================
 st.markdown(f"""
 <div class="app-header">
     <div class="app-title">■ 銘柄選定評価ダッシュボード (選定アルファ検証)</div>
