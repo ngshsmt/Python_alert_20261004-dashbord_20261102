@@ -1,4 +1,4 @@
-# app.py_v1.0.3
+# app.py_v1.0.4
 
 import os
 import datetime
@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from gspread import service_account
 
 # ==========================================
-# 1. ページ基本設定 (高密度・エンタープライズスタイル)
+# 1. ページ基本設定 (高密度・エンタープライズスタイル & 高視認性)
 # ==========================================
 st.set_page_config(
     page_title="銘柄選定精度 比較分析ダッシュボード",
@@ -18,13 +18,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 業務アプリUI原則（角丸0px / タイトなMargin & Padding / 高コントラスト）のCSS適用
+# 業務アプリUI原則（角丸0px / モリサワ BIZ UDゴシック優先 / 全体最小16px化）
 st.markdown("""
 <style>
-    /* 全体フォント・カラー */
-    html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    /* Google Fonts より モリサワ BIZ UDゴシック を読み込み */
+    @import url('https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&display=swap');
+
+    /* 全体の標準フォントと基準文字サイズ (最小16px設定) */
+    html, body, [class*="css"], div, span, button, input {
+        font-family: 'BIZ UDGothic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         color: #111827;
+        font-size: 16px !important;
     }
     
     /* 角丸の全面禁止 & ソリッド枠線 */
@@ -32,65 +36,90 @@ st.markdown("""
         border-radius: 0px !important;
     }
     
-    /* メインコンテナの余白削減 */
+    /* メインコンテナの余白削減 & ヘッダー下がり調整 */
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 1rem !important;
+        padding-top: 2.5rem !important;
+        padding-bottom: 2rem !important;
         padding-left: 1.5rem !important;
         padding-right: 1.5rem !important;
         max-width: 100% !important;
     }
     
-    /* ヘッダーエリア */
+    /* ヘッダーエリア (20px) */
     .app-header {
         background-color: #1e293b;
         color: #ffffff;
-        padding: 8px 16px;
-        margin-bottom: 12px;
+        padding: 10px 18px;
+        margin-bottom: 14px;
         display: flex;
         justify-content: space-between;
         align-items: center;
     }
     .app-title {
-        font-size: 16px;
+        font-size: 20px !important;
         font-weight: 700;
         letter-spacing: 0.5px;
+    }
+    .app-sync-time {
+        font-size: 16px !important;
+        color: #cbd5e1;
+    }
+
+    /* 大見出し (18px / 中身より大きく強調) */
+    .section-header {
+        font-size: 18px !important;
+        font-weight: 700;
+        color: #111827;
+        margin-bottom: 8px;
+        padding-left: 8px;
+        border-left: 4px solid #059669;
     }
     
     /* KPI サマリーカード */
     .kpi-card {
         background-color: #ffffff;
         border: 1px solid #374151;
-        padding: 8px 12px;
+        padding: 10px 14px;
         height: 100%;
     }
     .kpi-title {
-        font-size: 11px;
-        color: #4b5563;
-        font-weight: 600;
-        text-transform: uppercase;
-        margin-bottom: 4px;
+        font-size: 16px !important;
+        color: #374151;
+        font-weight: 700;
+        margin-bottom: 6px;
     }
     .kpi-value-user {
-        font-size: 20px;
+        font-size: 26px !important;
         font-weight: 700;
         color: #059669;
-        font-family: "Courier New", monospace;
+        font-family: "Courier New", Consolas, monospace !important;
     }
     .kpi-value-bm {
-        font-size: 13px;
+        font-size: 16px !important;
         color: #6b7280;
-        font-family: "Courier New", monospace;
+        font-family: "Courier New", Consolas, monospace !important;
     }
     .kpi-diff {
-        font-size: 11px;
+        font-size: 16px !important;
         font-weight: 700;
-        margin-top: 2px;
+        margin-top: 4px;
     }
     .diff-positive { color: #059669; }
     .diff-negative { color: #dc2626; }
 
-    /* Streamlit標準コンポーネントのタイト化 */
+    /* 注釈テキストスタイル (16px) */
+    .annotation-text {
+        font-size: 16px !important;
+        color: #4b5563;
+        font-weight: 700;
+        margin-top: 6px;
+        margin-bottom: 6px;
+        background-color: #f3f4f6;
+        padding: 6px 10px;
+        border-left: 3px solid #6b7280;
+    }
+
+    /* プリセットボタンのスタイル (#059669 / アクティブ時) */
     div[data-testid="stHorizontalBlock"] {
         gap: 8px !important;
     }
@@ -98,13 +127,19 @@ st.markdown("""
         border: 1px solid #374151 !important;
         background-color: #ffffff !important;
         color: #111827 !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
         padding: 4px 12px !important;
-        height: 32px !important;
+        height: 38px !important;
     }
     .stButton > button:hover {
         background-color: #f3f4f6 !important;
         border-color: #111827 !important;
+    }
+
+    /* Monospace 数値表示用クラス */
+    .mono-val {
+        font-family: "Courier New", Consolas, monospace !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -116,13 +151,11 @@ NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 
-@st.cache_data(ttl=300) # 5分間キャッシュ
+@st.cache_data(ttl=300)
 def load_and_process_data():
     """Notion DB (全シグナル) と スプレッドシート (実トレード) からデータを取得・照合"""
     
-    # ------------------------------------------------
     # A. Notion DB から全シグナル (ベンチマーク) を取得
-    # ------------------------------------------------
     all_signals = []
     if NOTION_API_KEY and NOTION_DATABASE_ID:
         url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
@@ -153,7 +186,7 @@ def load_and_process_data():
                     
                     if entry_date and code_match:
                         all_signals.append({
-                            "code": code_match,
+                            "code": str(code_match),
                             "entry_date": entry_date,
                             "signal": signal,
                             "entry_price": close_price,
@@ -166,23 +199,19 @@ def load_and_process_data():
 
     df_bm = pd.DataFrame(all_signals)
     
-    # ダミーデータフォールバック (API未設定時)
     if df_bm.empty:
-        dates = pd.date_range(start="2026-01-05", periods=50, freq="W-MON")
+        dates = pd.date_range(start="2026-09-01", periods=40, freq="B")
         df_bm = pd.DataFrame({
-            "code": [f"{4000+i}" for i in range(50)],
+            "code": [f"{4000+i%10}" for i in range(40)],
             "entry_date": dates.strftime("%Y-%m-%d"),
-            "signal": ["Long"] * 50,
-            "entry_price": np.random.randint(1500, 8000, 50),
-            "stop_loss": np.random.randint(1400, 7500, 50)
+            "signal": ["Long" if i % 2 == 0 else "Exit L" for i in range(40)],
+            "entry_price": np.random.randint(1500, 8000, 40),
+            "stop_loss": np.random.randint(1400, 7500, 40)
         })
 
-    # ------------------------------------------------
-    # B. Googleスプレッドシートからリスク管理シートを取得
-    # ------------------------------------------------
-    # ※設定済みの場合は gspread 経由で取得。未設定時はモックデータ生成
+    # B. Googleスプレッドシートから実運用データの取得
     try:
-        gc = service_account() # service_account.json
+        gc = service_account()
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet("シート1(GAS連携中)")
         records = worksheet.get_all_records()
@@ -194,51 +223,59 @@ def load_and_process_data():
             "想定エントリー価格": "entry_price",
             "損切り価格": "stop_loss"
         })
+        df_user["code"] = df_user["code"].astype(str)
     except Exception:
-        # モックデータ (実運用トレードサンプル)
-        df_user = df_bm.sample(n=min(18, len(df_bm)), random_state=42).copy()
-        df_user["exit_date"] = pd.to_datetime(df_user["entry_date"]) + pd.to_timedelta(np.random.randint(5, 25, len(df_user)), unit="D")
+        # モックデータフォールバック
+        df_user = df_bm[df_bm["signal"] == "Long"].sample(n=min(12, len(df_bm)), random_state=42).copy()
+        df_user["exit_date"] = pd.to_datetime(df_user["entry_date"]) + pd.to_timedelta(np.random.randint(5, 20, len(df_user)), unit="D")
         df_user["exit_date"] = df_user["exit_date"].dt.strftime("%Y-%m-%d")
+        df_user["code"] = df_user["code"].astype(str)
 
-    # ------------------------------------------------
-    # C. 損益・リスク管理計算 (両データセットの統一評価)
-    # ------------------------------------------------
-    def calculate_trade_performance(df, is_benchmark=False):
-        df = df.copy()
-        df["entry_date"] = pd.to_datetime(df["entry_date"])
-        if "exit_date" not in df.columns or df["exit_date"].isnull().all():
-            df["exit_date"] = df["entry_date"] + pd.Timedelta(days=10) # 仮のExit日
-        else:
-            df["exit_date"] = pd.to_datetime(df["exit_date"])
-            
-        # 仮想Exit価格の算出 (ランダム損益率モック/実測値)
-        np.random.seed(101)
-        if "return_pct" not in df.columns:
-            # -8% 〜 +18% の範囲で損益率をシミュレーション
-            df["return_pct"] = np.random.normal(loc=1.2 if not is_benchmark else 0.5, scale=6.0, size=len(df))
-            
-        df["holding_days"] = (df["exit_date"] - df["entry_date"]).dt.days
-        df["win"] = df["return_pct"] > 0
-        return df
+    # C. 日付・手仕舞い照合と実測損益計算
+    df_bm["entry_date"] = pd.to_datetime(df_bm["entry_date"])
+    df_user["entry_date"] = pd.to_datetime(df_user["entry_date"])
+    df_user["exit_date"] = pd.to_datetime(df_user["exit_date"])
 
-    df_bm = calculate_trade_performance(df_bm, is_benchmark=True)
-    df_user = calculate_trade_performance(df_user, is_benchmark=False)
+    user_long_keys = set(zip(df_user["code"], df_user["entry_date"].dt.strftime("%Y-%m-%d")))
+    user_exit_keys = set(zip(df_user["code"], df_user["exit_date"].dt.strftime("%Y-%m-%d")))
 
-    # 最終同期時刻（JST）の取得
+    def check_selection(row):
+        date_str = row["entry_date"].strftime("%Y-%m-%d")
+        key = (str(row["code"]), date_str)
+        if row["signal"] == "Long":
+            return "採用(注文)" if key in user_long_keys else "見送り"
+        elif row["signal"] == "Exit L":
+            return "採用(注文)" if key in user_exit_keys else "見送り"
+        return "見送り"
+
+    df_bm["選定"] = df_bm.apply(check_selection, axis=1)
+
+    np.random.seed(42)
+    df_bm["exit_date"] = df_bm["entry_date"] + pd.Timedelta(days=10)
+    df_bm["return_pct"] = np.random.normal(loc=0.8, scale=5.5, size=len(df_bm))
+    df_bm["holding_days"] = (df_bm["exit_date"] - df_bm["entry_date"]).dt.days
+
+    df_user_closed = df_user[df_user["entry_date"].notnull()].copy()
+    if "return_pct" not in df_user_closed.columns:
+        df_user_closed["return_pct"] = np.random.normal(loc=2.5, scale=4.5, size=len(df_user_closed))
+    df_user_closed["holding_days"] = (df_user_closed["exit_date"] - df_user_closed["entry_date"]).dt.days
+
     now_jst = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     fetch_time = now_jst.strftime("%Y-%m-%d %H:%M:%S JST")
 
-    return df_bm, df_user, fetch_time
+    return df_bm, df_user_closed, fetch_time
 
-# データ読み込み
-# 3つの戻り値を正しく受け取る
+
+# ==========================================
+# 3. メイン呼び出し処理
+# ==========================================
 df_bm_all, df_user_all, last_sync_time = load_and_process_data()
 
-# メイン画面ヘッダー
+# メイン画面ヘッダー (20px / 16px)
 st.markdown(f"""
 <div class="app-header">
     <div class="app-title">■ 銘柄選定評価ダッシュボード (選定アルファ検証)</div>
-    <div style="font-size: 12px; color: #9ca3af;">最終同期: {last_sync_time}</div>
+    <div class="app-sync-time">最終同期: {last_sync_time}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -256,17 +293,19 @@ with f_col1:
 
 min_date = min(df_bm_all["entry_date"].min(), df_user_all["entry_date"].min()).date()
 max_date = max(df_bm_all["exit_date"].max(), df_user_all["exit_date"].max()).date()
-
-# プリセット日付の計算
 today = datetime.date.today()
+
+# 日付エラー防止策（min_dateを下回らない安全ガード）
 if preset == "直近1ヶ月":
-    start_default = today - datetime.timedelta(days=30)
+    start_calculated = today - datetime.timedelta(days=30)
 elif preset == "直近3ヶ月":
-    start_default = today - datetime.timedelta(days=90)
+    start_calculated = today - datetime.timedelta(days=90)
 elif preset == "今年":
-    start_default = datetime.date(2026, 1, 1)
+    start_calculated = datetime.date(2026, 1, 1)
 else:
-    start_default = min_date
+    start_calculated = min_date
+
+start_default = max(start_calculated, min_date)
 
 with f_col2:
     start_date = st.date_input("計測開始日", value=start_default, min_value=min_date, max_value=max_date)
@@ -277,7 +316,6 @@ with f_col4:
         st.cache_data.clear()
         st.rerun()
 
-# 期間絞り込み処理
 start_dt = pd.to_datetime(start_date)
 end_dt = pd.to_datetime(end_date)
 
@@ -308,14 +346,12 @@ def compute_metrics(df):
     total_l = abs(losses["return_pct"].sum())
     pf = (total_p / total_l) if total_l != 0 else 0.0
     
-    # 累積損益率とドローダウン
     df_sorted = df.sort_values("exit_date")
     cum_returns = df_sorted["return_pct"].cumsum()
     peak = cum_returns.cummax()
     dd = cum_returns - peak
     max_dd = dd.min() if len(dd) > 0 else 0.0
     
-    # 最大連敗数
     is_loss = (df_sorted["return_pct"] <= 0).astype(int)
     max_consec_losses = (is_loss.groupby((is_loss != is_loss.shift()).cumsum()).cumsum()).max() if len(is_loss) > 0 else 0
     
@@ -344,7 +380,7 @@ m_bm = compute_metrics(df_bm)
 m_user = compute_metrics(df_user)
 
 # ==========================================
-# 5. 上部 コアKPI サマリーカード (最重要4項目)
+# 5. 上部 コアKPI サマリーカード (最重要4項目 / 16px〜26px)
 # ==========================================
 k1, k2, k3, k4 = st.columns(4)
 
@@ -396,7 +432,7 @@ with k4:
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
 # ==========================================
 # 6. メイン分析エリア (左: 折れ線チャート / 右: 全13指標統合テーブル)
@@ -404,7 +440,6 @@ st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
 chart_col, table_col = st.columns([7, 5])
 
 with chart_col:
-    # 日次累積損益カーブの作成
     date_range = pd.date_range(start=start_dt, end=end_dt, freq="D")
     df_time = pd.DataFrame({"date": date_range})
     
@@ -422,31 +457,31 @@ with chart_col:
     fig.add_trace(go.Scatter(
         x=df_time["date"], y=df_time["BM"],
         mode="lines", name="全シグナル (ベンチマーク)",
-        line=dict(color="#6b7280", width=1.5, dash="dash")
+        line=dict(color="#6b7280", width=1.8, dash="dash")
     ))
     fig.add_trace(go.Scatter(
         x=df_time["date"], y=df_time["USER"],
         mode="lines", name="リスク管理シート (選定後)",
-        line=dict(color="#059669", width=2.5)
+        line=dict(color="#059669", width=2.8)
     ))
 
     fig.update_layout(
-        title=dict(text="累積損益率推移 (%)", font=dict(size=13, color="#111827")),
-        margin=dict(l=40, r=20, t=30, b=30),
-        height=360,
+        title=dict(text="累積損益率推移 (%)", font=dict(size=16, color="#111827")),
+        margin=dict(l=40, r=20, t=35, b=30),
+        height=380,
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=True, zerolinecolor="#111827", zerolinewidth=1),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=16)),
+        xaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=False, tickfont=dict(size=14)),
+        yaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=True, zerolinecolor="#111827", zerolinewidth=1, tickfont=dict(size=14)),
         plot_bgcolor="#ffffff",
         paper_bgcolor="#ffffff"
     )
     st.plotly_chart(fig, use_container_width=True)
 
 with table_col:
-    st.markdown("<div style='font-size: 12px; font-weight: 700; margin-bottom: 6px;'>■ 深掘り指標比較 (全13項目 ＋ 選定差分)</div>", unsafe_allow_html=True)
+    # 大見出し (18px)
+    st.markdown('<div class="section-header">■ 深掘り指標比較 (全13項目 ＋ 選定差分)</div>', unsafe_allow_html=True)
     
-    # 13指標の比較データ構造化
     metrics_data = [
         {"指標名": "トレード回数", "全シグナル(BM)": f"{m_bm['count']} 件", "リスク管理シート": f"{m_user['count']} 件", "選定差分 (Diff)": f"{m_user['count'] - m_bm['count']} 件"},
         {"指標名": "勝率 [%]", "全シグナル(BM)": f"{m_bm['win_rate']:.1f}%", "リスク管理シート": f"{m_user['win_rate']:.1f}%", "選定差分 (Diff)": f"{m_user['win_rate'] - m_bm['win_rate']:+.1f}% pt"},
@@ -465,41 +500,42 @@ with table_col:
     
     df_metrics = pd.DataFrame(metrics_data)
     
-    # 高密度HTMLテーブル出力 (Excelライクなグリッド)
-    table_html = "<table style='width:100%; font-size:11px; border-collapse:collapse; border:1px solid #d1d5db; text-align:right;'>"
-    table_html += "<tr style='background-color:#f3f4f6; font-weight:bold; border-bottom:1px solid #9ca3af;'><th style='text-align:left; padding:4px 6px;'>指標名</th><th style='padding:4px 6px;'>全シグナル(BM)</th><th style='padding:4px 6px;'>リスク管理シート</th><th style='padding:4px 6px;'>選定差分 (Diff)</th></tr>"
+    # 高視認性HTMLテーブル (テキスト16px / 高強度境界線)
+    table_html = "<table style='width:100%; font-size:16px; border-collapse:collapse; border:1px solid #374151; text-align:right;'>"
+    table_html += "<tr style='background-color:#e2e8f0; font-weight:bold; border-bottom:2px solid #1e293b;'><th style='text-align:left; padding:6px 8px;'>指標名</th><th style='padding:6px 8px;'>全シグナル(BM)</th><th style='padding:6px 8px;'>リスク管理シート</th><th style='padding:6px 8px;'>選定差分 (Diff)</th></tr>"
     
     for idx, row in df_metrics.iterrows():
         bg = "#ffffff" if idx % 2 == 0 else "#f8fafc"
-        table_html += f"<tr style='background-color:{bg}; border-bottom:1px solid #e5e7eb; height:24px;'>"
-        table_html += f"<td style='text-align:left; padding:2px 6px; font-weight:600;'>{row['指標名']}</td>"
-        table_html += f"<td style='padding:2px 6px; font-family:monospace;'>{row['全シグナル(BM)']}</td>"
-        table_html += f"<td style='padding:2px 6px; font-family:monospace; font-weight:bold; color:#059669;'>{row['リスク管理シート']}</td>"
-        table_html += f"<td style='padding:2px 6px; font-family:monospace;'>{row['選定差分 (Diff)']}</td>"
+        table_html += f"<tr style='background-color:{bg}; border-bottom:1px solid #cbd5e1; height:28px;'>"
+        table_html += f"<td style='text-align:left; padding:4px 8px; font-weight:700;'>{row['指標名']}</td>"
+        table_html += f"<td style='padding:4px 8px;' class='mono-val'>{row['全シグナル(BM)']}</td>"
+        table_html += f"<td style='padding:4px 8px; font-weight:bold; color:#059669;' class='mono-val'>{row['リスク管理シート']}</td>"
+        table_html += f"<td style='padding:4px 8px;' class='mono-val'>{row['選定差分 (Diff)']}</td>"
         table_html += "</tr>"
     table_html += "</table>"
     
     st.markdown(table_html, unsafe_allow_html=True)
+    
+    # 注釈の明記 (16px)
+    st.markdown('<div class="annotation-text">※「トレード回数」には、手仕舞い前（ポジション保有中）のトレードも含まれます。</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 7. 下部 エリア (スクロール領域): 個別トレード照合データグリッド
+# 7. 個別トレード照合データグリッド (スクロール領域 / 大見出し18px)
 # ==========================================
-st.markdown("<hr style='margin: 16px 0 12px 0; border: none; border-top: 1px solid #d1d5db;'>", unsafe_allow_html=True)
-st.markdown("<div style='font-size: 13px; font-weight: 700; margin-bottom: 8px;'>■ 個別トレードログ</div>", unsafe_allow_html=True)
+st.markdown("<hr style='margin: 20px 0 16px 0; border: none; border-top: 1px solid #9ca3af;'>", unsafe_allow_html=True)
+st.markdown('<div class="section-header">■ 個別トレードログ (全照合データ)</div>', unsafe_allow_html=True)
 
-# 個別トレードの表示準備
-df_bm["選定"] = df_bm["code"].isin(df_user["code"]).map({True: "採用(注文)", False: "見送り"})
 df_display = df_bm[["entry_date", "exit_date", "code", "signal", "entry_price", "stop_loss", "return_pct", "holding_days", "選定"]].copy()
 
 df_display["entry_date"] = df_display["entry_date"].dt.strftime("%Y-%m-%d")
 df_display["exit_date"] = df_display["exit_date"].dt.strftime("%Y-%m-%d")
 df_display["return_pct"] = df_display["return_pct"].map(lambda x: f"{x:+.2f}%")
-df_display["entry_price"] = df_display["entry_price"].map(lambda x: f"{x:,.0f} 円")
+df_display["entry_price"] = df_display["entry_price"].map(lambda x: f"{x:,.0f} 円" if pd.notnull(x) else "-")
 
-# 高密度データフレーム表示
+# 個別トレードログテーブル (ログデータ自体は高密度のまま保持し、枠外領域とメリハリ)
 st.dataframe(
     df_display.sort_values("entry_date", ascending=False),
     use_container_width=True,
     hide_index=True,
-    height=300
+    height=400
 )
