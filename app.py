@@ -1,4 +1,4 @@
-# app.py_v1.0.4
+# app.py_v1.1.0
 
 import os
 import datetime
@@ -21,22 +21,18 @@ st.set_page_config(
 # 業務アプリUI原則（角丸0px / モリサワ BIZ UDゴシック優先 / 全体最小16px化）
 st.markdown("""
 <style>
-    /* Google Fonts より モリサワ BIZ UDゴシック を読み込み */
     @import url('https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&display=swap');
 
-    /* 全体の標準フォントと基準文字サイズ (最小16px設定) */
     html, body, [class*="css"], div, span, button, input {
         font-family: 'BIZ UDGothic', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
         color: #111827;
         font-size: 16px !important;
     }
     
-    /* 角丸の全面禁止 & ソリッド枠線 */
     * {
         border-radius: 0px !important;
     }
     
-    /* メインコンテナの余白削減 & ヘッダー下がり調整 */
     .block-container {
         padding-top: 2.5rem !important;
         padding-bottom: 2rem !important;
@@ -45,7 +41,6 @@ st.markdown("""
         max-width: 100% !important;
     }
     
-    /* ヘッダーエリア (20px) */
     .app-header {
         background-color: #1e293b;
         color: #ffffff;
@@ -66,7 +61,6 @@ st.markdown("""
         color: #cbd5e1;
     }
 
-    /* 大見出し (18px / 中身より大きく強調) */
     .section-header {
         font-size: 18px !important;
         font-weight: 700;
@@ -76,7 +70,6 @@ st.markdown("""
         border-left: 4px solid #059669;
     }
     
-    /* KPI サマリーカード */
     .kpi-card {
         background-color: #ffffff;
         border: 1px solid #374151;
@@ -108,7 +101,6 @@ st.markdown("""
     .diff-positive { color: #059669; }
     .diff-negative { color: #dc2626; }
 
-    /* 注釈テキストスタイル (16px) */
     .annotation-text {
         font-size: 16px !important;
         color: #4b5563;
@@ -120,10 +112,6 @@ st.markdown("""
         border-left: 3px solid #6b7280;
     }
 
-    /* プリセットボタンのスタイル (#059669 / アクティブ時) */
-    div[data-testid="stHorizontalBlock"] {
-        gap: 8px !important;
-    }
     .stButton > button {
         border: 1px solid #374151 !important;
         background-color: #ffffff !important;
@@ -138,7 +126,6 @@ st.markdown("""
         border-color: #111827 !important;
     }
 
-    /* Monospace 数値表示用クラス */
     .mono-val {
         font-family: "Courier New", Consolas, monospace !important;
     }
@@ -146,7 +133,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. データ取得 & 照合処理 (Notion API & Google Sheets API)
+# 2. データ取得 & 照合処理 (1トレード1行化 & 正確な株価損益計算)
 # ==========================================
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
@@ -154,10 +141,10 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 
 @st.cache_data(ttl=300)
 def load_and_process_data():
-    """Notion DB (全シグナル) と スプレッドシート (実トレード) からデータを取得・照合"""
+    """Notion DB (全シグナル) と スプレッドシート (実トレード) からデータを取得・対照化"""
     
-    # A. Notion DB から全シグナル (ベンチマーク) を取得
-    all_signals = []
+    # A. Notion DB からページネーション対応で全シグナル取得
+    all_notion_records = []
     if NOTION_API_KEY and NOTION_DATABASE_ID:
         url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
         headers = {
@@ -186,11 +173,11 @@ def load_and_process_data():
                     stop_loss = props.get("損切り価格", {}).get("number")
                     
                     if entry_date and code_match:
-                        all_signals.append({
+                        all_notion_records.append({
                             "code": str(code_match),
-                            "entry_date": entry_date,
+                            "date": entry_date,
                             "signal": signal,
-                            "entry_price": close_price,
+                            "price": close_price,
                             "stop_loss": stop_loss
                         })
                 has_more = data.get("has_more", False)
@@ -198,81 +185,140 @@ def load_and_process_data():
             else:
                 has_more = False
 
-    df_bm = pd.DataFrame(all_signals)
-    
-    if df_bm.empty:
-        dates = pd.date_range(start="2026-09-01", periods=40, freq="B")
-        df_bm = pd.DataFrame({
-            "code": [f"{4000+i%10}" for i in range(40)],
-            "entry_date": dates.strftime("%Y-%m-%d"),
-            "signal": ["Long" if i % 2 == 0 else "Exit L" for i in range(40)],
-            "entry_price": np.random.randint(1500, 8000, 40),
-            "stop_loss": np.random.randint(1400, 7500, 40)
-        })
+    df_raw = pd.DataFrame(all_notion_records)
 
-    # B. Googleスプレッドシートから実運用データの取得
+    # Notionデータが空の場合の初期化
+    if df_raw.empty:
+        df_raw = pd.DataFrame(columns=["code", "date", "signal", "price", "stop_loss"])
+
+    # B. 1トレード1行 (Long/Short) へのペアリング処理
+    trades = []
+    grouped = df_raw.groupby("code") if not df_raw.empty else []
+
+    for code, group in grouped:
+        group = group.sort_values("date")
+        open_trade = None
+        
+        for _, row in group.iterrows():
+            sig = row["signal"]
+            if sig in ["Long", "Short"]:
+                if open_trade is not None:
+                    # 前の未決済トレードをクローズせずに新しいトレードが開始した場合
+                    trades.append(open_trade)
+                open_trade = {
+                    "code": code,
+                    "signal": sig,  # Long または Short に統一
+                    "entry_date": row["date"],
+                    "exit_date": None,
+                    "entry_price": row["price"],
+                    "exit_price": None,
+                    "stop_loss": row["stop_loss"],
+                    "return_pct": 0.0,
+                    "holding_days": 0
+                }
+            elif sig in ["Exit L", "Exit S"] and open_trade is not None:
+                open_trade["exit_date"] = row["date"]
+                open_trade["exit_price"] = row["price"]
+                
+                # 正確な株価変化率の計算 ((手仕舞い価格 - エントリー価格) / エントリー価格)
+                p_in = open_trade["entry_price"]
+                p_out = row["price"]
+                if p_in and p_out and p_in > 0:
+                    if open_trade["signal"] == "Long":
+                        open_trade["return_pct"] = ((p_out - p_in) / p_in) * 100
+                    else:  # Short
+                        open_trade["return_pct"] = ((p_in - p_out) / p_in) * 100
+                
+                d_in = pd.to_datetime(open_trade["entry_date"])
+                d_out = pd.to_datetime(row["date"])
+                open_trade["holding_days"] = (d_out - d_in).days
+                
+                trades.append(open_trade)
+                open_trade = None
+
+        if open_trade is not None:
+            trades.append(open_trade)
+
+    df_bm = pd.DataFrame(trades)
+    if df_bm.empty:
+        df_bm = pd.DataFrame(columns=["code", "signal", "entry_date", "exit_date", "entry_price", "exit_price", "stop_loss", "return_pct", "holding_days"])
+
+    # C. Googleスプレッドシート（リスク管理シート）実運用データの照合
     try:
         gc = service_account()
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet("シート1(GAS連携中)")
         records = worksheet.get_all_records()
-        df_user = pd.DataFrame(records)
-        df_user = df_user.rename(columns={
+        df_user_raw = pd.DataFrame(records)
+        df_user_raw = df_user_raw.rename(columns={
             "銘柄コード": "code",
             "エントリー点灯日付": "entry_date",
             "消灯日付": "exit_date",
             "想定エントリー価格": "entry_price",
-            "損切り価格": "stop_loss"
+            "損切り価格": "stop_loss",
+            "売買方向": "signal"
         })
-        df_user["code"] = df_user["code"].astype(str)
+        df_user_raw["code"] = df_user_raw["code"].astype(str)
+        
+        # 実運用トレードの整理
+        user_trades = []
+        for _, row in df_user_raw.iterrows():
+            e_date = str(row.get("entry_date", ""))
+            x_date = str(row.get("exit_date", "")) if pd.notnull(row.get("exit_date")) and str(row.get("exit_date")).strip() != "" else None
+            p_in = row.get("entry_price")
+            
+            # 手仕舞い済み価格の計算
+            ret_pct = 0.0
+            h_days = 0
+            if e_date and x_date:
+                d_in = pd.to_datetime(e_date)
+                d_out = pd.to_datetime(x_date)
+                h_days = (d_out - d_in).days
+                # スプレッドシート内の実価格ベース計算
+                p_out = row.get("利確価格（目安）") if row.get("利確価格（目安）") else p_in
+                if p_in and p_out and float(p_in) > 0:
+                    ret_pct = ((float(p_out) - float(p_in)) / float(p_in)) * 100
+
+            user_trades.append({
+                "code": str(row.get("code")),
+                "signal": row.get("signal", "Long"), # Long または Short
+                "entry_date": e_date,
+                "exit_date": x_date,
+                "entry_price": p_in,
+                "stop_loss": row.get("stop_loss"),
+                "return_pct": ret_pct,
+                "holding_days": h_days
+            })
+        df_user = pd.DataFrame(user_trades)
     except Exception:
-        # モックデータフォールバック
-        df_user = df_bm[df_bm["signal"] == "Long"].sample(n=min(12, len(df_bm)), random_state=42).copy()
-        df_user["exit_date"] = pd.to_datetime(df_user["entry_date"]) + pd.to_timedelta(np.random.randint(5, 20, len(df_user)), unit="D")
-        df_user["exit_date"] = df_user["exit_date"].dt.strftime("%Y-%m-%d")
-        df_user["code"] = df_user["code"].astype(str)
+        df_user = df_bm.copy()
 
-    # C. 日付・手仕舞い照合と実測損益計算
-    df_bm["entry_date"] = pd.to_datetime(df_bm["entry_date"])
-    df_user["entry_date"] = pd.to_datetime(df_user["entry_date"])
-    df_user["exit_date"] = pd.to_datetime(df_user["exit_date"])
+    # 日付型の変換
+    if not df_bm.empty:
+        df_bm["entry_date"] = pd.to_datetime(df_bm["entry_date"])
+        df_bm["exit_date_dt"] = pd.to_datetime(df_bm["exit_date"])
+    else:
+        df_bm["entry_date"] = pd.Series(dtype="datetime64[ns]")
+        df_bm["exit_date_dt"] = pd.Series(dtype="datetime64[ns]")
 
-    user_long_keys = set(zip(df_user["code"], df_user["entry_date"].dt.strftime("%Y-%m-%d")))
-    user_exit_keys = set(zip(df_user["code"], df_user["exit_date"].dt.strftime("%Y-%m-%d")))
-
-    def check_selection(row):
-        date_str = row["entry_date"].strftime("%Y-%m-%d")
-        key = (str(row["code"]), date_str)
-        if row["signal"] == "Long":
-            return "採用(注文)" if key in user_long_keys else "見送り"
-        elif row["signal"] == "Exit L":
-            return "採用(注文)" if key in user_exit_keys else "見送り"
-        return "見送り"
-
-    df_bm["選定"] = df_bm.apply(check_selection, axis=1)
-
-    np.random.seed(42)
-    df_bm["exit_date"] = df_bm["entry_date"] + pd.Timedelta(days=10)
-    df_bm["return_pct"] = np.random.normal(loc=0.8, scale=5.5, size=len(df_bm))
-    df_bm["holding_days"] = (df_bm["exit_date"] - df_bm["entry_date"]).dt.days
-
-    df_user_closed = df_user[df_user["entry_date"].notnull()].copy()
-    if "return_pct" not in df_user_closed.columns:
-        df_user_closed["return_pct"] = np.random.normal(loc=2.5, scale=4.5, size=len(df_user_closed))
-    df_user_closed["holding_days"] = (df_user_closed["exit_date"] - df_user_closed["entry_date"]).dt.days
+    if not df_user.empty:
+        df_user["entry_date"] = pd.to_datetime(df_user["entry_date"])
+        df_user["exit_date_dt"] = pd.to_datetime(df_user["exit_date"])
+    else:
+        df_user["entry_date"] = pd.Series(dtype="datetime64[ns]")
+        df_user["exit_date_dt"] = pd.Series(dtype="datetime64[ns]")
 
     now_jst = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     fetch_time = now_jst.strftime("%Y-%m-%d %H:%M:%S JST")
 
-    return df_bm, df_user_closed, fetch_time
+    return df_bm, df_user, fetch_time
 
 
 # ==========================================
-# 3. メイン呼び出し処理
+# 3. メイン処理呼び出し
 # ==========================================
 df_bm_all, df_user_all, last_sync_time = load_and_process_data()
 
-# メイン画面ヘッダー (20px / 16px)
 st.markdown(f"""
 <div class="app-header">
     <div class="app-title">■ 銘柄選定評価ダッシュボード (選定アルファ検証)</div>
@@ -292,15 +338,15 @@ with f_col1:
         label_visibility="collapsed"
     )
 
-min_date = min(df_bm_all["entry_date"].min(), df_user_all["entry_date"].min()).date()
-max_date = max(df_bm_all["exit_date"].max(), df_user_all["exit_date"].max()).date()
-today = datetime.date.today()
+min_bm = df_bm_all["entry_date"].min() if not df_bm_all.empty else pd.to_datetime("2026-01-01")
+min_usr = df_user_all["entry_date"].min() if not df_user_all.empty else pd.to_datetime("2026-01-01")
+min_date = min(min_bm, min_usr).date()
+max_date = datetime.date.today()
 
-# 日付エラー防止策（min_dateを下回らない安全ガード）
 if preset == "直近1ヶ月":
-    start_calculated = today - datetime.timedelta(days=30)
+    start_calculated = max_date - datetime.timedelta(days=30)
 elif preset == "直近3ヶ月":
-    start_calculated = today - datetime.timedelta(days=90)
+    start_calculated = max_date - datetime.timedelta(days=90)
 elif preset == "今年":
     start_calculated = datetime.date(2026, 1, 1)
 else:
@@ -311,7 +357,7 @@ start_default = max(start_calculated, min_date)
 with f_col2:
     start_date = st.date_input("計測開始日", value=start_default, min_value=min_date, max_value=max_date)
 with f_col3:
-    end_date = st.date_input("計測終了日", value=today, min_value=min_date, max_value=max_date)
+    end_date = st.date_input("計測終了日", value=max_date, min_value=min_date, max_value=max_date)
 with f_col4:
     if st.button("データ再取得", use_container_width=True):
         st.cache_data.clear()
@@ -320,8 +366,8 @@ with f_col4:
 start_dt = pd.to_datetime(start_date)
 end_dt = pd.to_datetime(end_date)
 
-df_bm = df_bm_all[(df_bm_all["exit_date"] >= start_dt) & (df_bm_all["exit_date"] <= end_dt)].copy()
-df_user = df_user_all[(df_user_all["exit_date"] >= start_dt) & (df_user_all["exit_date"] <= end_dt)].copy()
+df_bm = df_bm_all[(df_bm_all["entry_date"] >= start_dt) & (df_bm_all["entry_date"] <= end_dt)].copy()
+df_user = df_user_all[(df_user_all["entry_date"] >= start_dt) & (df_user_all["entry_date"] <= end_dt)].copy()
 
 # ==========================================
 # 4. 指標計算ロジック (全13指標)
@@ -331,15 +377,21 @@ def compute_metrics(df):
         return {k: 0 for k in ["count", "win_rate", "avg_profit", "avg_loss", "max_profit", "max_loss", 
                                "rr_ratio", "pf", "max_dd", "max_consec_losses", "avg_hold", "avg_win_hold", "avg_loss_hold", "total_return"]}
     
+    closed_df = df[df["exit_date"].notnull()].copy()
     count = len(df)
-    wins = df[df["return_pct"] > 0]
-    losses = df[df["return_pct"] <= 0]
     
-    win_rate = (len(wins) / count) * 100
+    if len(closed_df) == 0:
+        return {k: 0 for k in ["count", "win_rate", "avg_profit", "avg_loss", "max_profit", "max_loss", 
+                               "rr_ratio", "pf", "max_dd", "max_consec_losses", "avg_hold", "avg_win_hold", "avg_loss_hold", "total_return"]}
+    
+    wins = closed_df[closed_df["return_pct"] > 0]
+    losses = closed_df[closed_df["return_pct"] <= 0]
+    
+    win_rate = (len(wins) / len(closed_df)) * 100
     avg_profit = wins["return_pct"].mean() if len(wins) > 0 else 0.0
     avg_loss = losses["return_pct"].mean() if len(losses) > 0 else 0.0
-    max_profit = df["return_pct"].max()
-    max_loss = df["return_pct"].min()
+    max_profit = closed_df["return_pct"].max()
+    max_loss = closed_df["return_pct"].min()
     
     rr_ratio = (avg_profit / abs(avg_loss)) if avg_loss != 0 else 0.0
     
@@ -347,7 +399,7 @@ def compute_metrics(df):
     total_l = abs(losses["return_pct"].sum())
     pf = (total_p / total_l) if total_l != 0 else 0.0
     
-    df_sorted = df.sort_values("exit_date")
+    df_sorted = closed_df.sort_values("exit_date_dt")
     cum_returns = df_sorted["return_pct"].cumsum()
     peak = cum_returns.cummax()
     dd = cum_returns - peak
@@ -356,7 +408,7 @@ def compute_metrics(df):
     is_loss = (df_sorted["return_pct"] <= 0).astype(int)
     max_consec_losses = (is_loss.groupby((is_loss != is_loss.shift()).cumsum()).cumsum()).max() if len(is_loss) > 0 else 0
     
-    avg_hold = df["holding_days"].mean()
+    avg_hold = closed_df["holding_days"].mean()
     avg_win_hold = wins["holding_days"].mean() if len(wins) > 0 else 0.0
     avg_loss_hold = losses["holding_days"].mean() if len(losses) > 0 else 0.0
     
@@ -381,7 +433,7 @@ m_bm = compute_metrics(df_bm)
 m_user = compute_metrics(df_user)
 
 # ==========================================
-# 5. 上部 コアKPI サマリーカード (最重要4項目 / 16px〜26px)
+# 5. 上部 コアKPI サマリーカード
 # ==========================================
 k1, k2, k3, k4 = st.columns(4)
 
@@ -436,7 +488,7 @@ with k4:
 st.markdown("<div style='margin-bottom: 10px;'></div>", unsafe_allow_html=True)
 
 # ==========================================
-# 6. メイン分析エリア (左: 折れ線チャート / 右: 全13指標統合テーブル)
+# 6. メイン分析エリア (左: 折れ線チャート / 右: 深掘り比較テーブル)
 # ==========================================
 chart_col, table_col = st.columns([7, 5])
 
@@ -446,8 +498,11 @@ with chart_col:
     
     def get_cum_series(trade_df, dates):
         res = []
+        if trade_df.empty:
+            return [0.0] * len(dates)
+        closed_df = trade_df[trade_df["exit_date"].notnull()].copy()
         for d in dates:
-            sub = trade_df[trade_df["exit_date"] <= d]
+            sub = closed_df[closed_df["exit_date_dt"] <= d]
             res.append(sub["return_pct"].sum() if len(sub) > 0 else 0.0)
         return res
 
@@ -480,7 +535,6 @@ with chart_col:
     st.plotly_chart(fig, use_container_width=True)
 
 with table_col:
-    # 大見出し (18px)
     st.markdown('<div class="section-header">■ 深掘り指標比較 (全13項目 ＋ 選定差分)</div>', unsafe_allow_html=True)
     
     metrics_data = [
@@ -501,7 +555,6 @@ with table_col:
     
     df_metrics = pd.DataFrame(metrics_data)
     
-    # 高視認性HTMLテーブル (テキスト16px / 高強度境界線)
     table_html = "<table style='width:100%; font-size:16px; border-collapse:collapse; border:1px solid #374151; text-align:right;'>"
     table_html += "<tr style='background-color:#e2e8f0; font-weight:bold; border-bottom:2px solid #1e293b;'><th style='text-align:left; padding:6px 8px;'>指標名</th><th style='padding:6px 8px;'>全シグナル(BM)</th><th style='padding:6px 8px;'>リスク管理シート</th><th style='padding:6px 8px;'>選定差分 (Diff)</th></tr>"
     
@@ -516,26 +569,40 @@ with table_col:
     table_html += "</table>"
     
     st.markdown(table_html, unsafe_allow_html=True)
-    
-    # 注釈の明記 (16px)
     st.markdown('<div class="annotation-text">※「トレード回数」には、手仕舞い前（ポジション保有中）のトレードも含まれます。</div>', unsafe_allow_html=True)
 
 # ==========================================
-# 7. 個別トレード照合データグリッド (スクロール領域 / 大見出し18px)
+# 7. 個別トレード照合データグリッド (1行1トレード統一 / Long・Short統一)
 # ==========================================
 st.markdown("<hr style='margin: 20px 0 16px 0; border: none; border-top: 1px solid #9ca3af;'>", unsafe_allow_html=True)
 st.markdown('<div class="section-header">■ 個別トレードログ (全照合データ)</div>', unsafe_allow_html=True)
 
-df_display = df_bm[["entry_date", "exit_date", "code", "signal", "entry_price", "stop_loss", "return_pct", "holding_days", "選定"]].copy()
+if not df_bm.empty:
+    df_display = df_bm[["entry_date", "exit_date", "code", "signal", "entry_price", "exit_price", "stop_loss", "return_pct", "holding_days"]].copy()
 
-df_display["entry_date"] = df_display["entry_date"].dt.strftime("%Y-%m-%d")
-df_display["exit_date"] = df_display["exit_date"].dt.strftime("%Y-%m-%d")
-df_display["return_pct"] = df_display["return_pct"].map(lambda x: f"{x:+.2f}%")
-df_display["entry_price"] = df_display["entry_price"].map(lambda x: f"{x:,.0f} 円" if pd.notnull(x) else "-")
+    df_display["entry_date"] = df_display["entry_date"].dt.strftime("%Y-%m-%d")
+    df_display["exit_date"] = df_display["exit_date"].apply(lambda x: str(x) if pd.notnull(x) and str(x) != "None" else "保有中(未決済)")
+    df_display["return_pct"] = df_display.apply(lambda r: f"{r['return_pct']:+.2f}%" if r["exit_date"] != "保有中(未決済)" else "未確定", axis=1)
+    df_display["entry_price"] = df_display["entry_price"].map(lambda x: f"{x:,.0f} 円" if pd.notnull(x) else "-")
+    df_display["exit_price"] = df_display["exit_price"].map(lambda x: f"{x:,.0f} 円" if pd.notnull(x) and str(x) != "None" else "-")
+    
+    # 表示用カラム名へのリネーム
+    df_display = df_display.rename(columns={
+        "entry_date": "エントリー日付",
+        "exit_date": "手仕舞い日付",
+        "code": "銘柄コード",
+        "signal": "シグナル(売買方向)",
+        "entry_price": "エントリー価格",
+        "exit_price": "手仕舞い価格",
+        "stop_loss": "損切り価格",
+        "return_pct": "確実現実損益率",
+        "holding_days": "保有日数"
+    })
+else:
+    df_display = pd.DataFrame(columns=["エントリー日付", "手仕舞い日付", "銘柄コード", "シグナル(売買方向)", "エントリー価格", "手仕舞い価格", "損切り価格", "確実現実損益率", "保有日数"])
 
-# 個別トレードログテーブル (ログデータ自体は高密度のまま保持し、枠外領域とメリハリ)
 st.dataframe(
-    df_display.sort_values("entry_date", ascending=False),
+    df_display.sort_values("エントリー日付", ascending=False),
     use_container_width=True,
     hide_index=True,
     height=400
