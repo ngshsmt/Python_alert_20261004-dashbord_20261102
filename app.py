@@ -1,4 +1,4 @@
-# app.py_v1.0.1
+# app.py_v1.0.2
 
 import os
 import datetime
@@ -224,16 +224,23 @@ def load_and_process_data():
     df_bm = calculate_trade_performance(df_bm, is_benchmark=True)
     df_user = calculate_trade_performance(df_user, is_benchmark=False)
 
-    # ------------------------------------------------
-    # 最終同期時刻の取得（JST）
-    # ------------------------------------------------
+    # 最終同期時刻（JST）の取得
     now_jst = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9)))
     fetch_time = now_jst.strftime("%Y-%m-%d %H:%M:%S JST")
 
     return df_bm, df_user, fetch_time
 
 # データ読み込み
-df_bm_all, df_user_all = load_and_process_data()
+# 3つの戻り値を正しく受け取る
+df_bm_all, df_user_all, last_sync_time = load_and_process_data()
+
+# メイン画面ヘッダー
+st.markdown(f"""
+<div class="app-header">
+    <div class="app-title">■ 銘柄選定評価ダッシュボード (選定アルファ検証)</div>
+    <div style="font-size: 12px; color: #9ca3af;">最終同期: {last_sync_time}</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # 3. メイン画面 & 期間フィルターヘッダー
