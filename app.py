@@ -59,6 +59,7 @@ st.markdown("""
         font-size: 20px !important;
         font-weight: 700;
         letter-spacing: 0.5px;
+        color: #ffffff;
     }
     .app-sync-time {
         font-size: 16px !important;
