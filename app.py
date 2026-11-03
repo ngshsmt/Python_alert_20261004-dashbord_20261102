@@ -1,4 +1,4 @@
-# app.py_v1.0.2
+# app.py_v1.0.3
 
 import os
 import datetime
@@ -196,8 +196,8 @@ def load_and_process_data():
         })
     except Exception:
         # モックデータ (実運用トレードサンプル)
-        df_user = df_bm.sample(n=18, random_state=42).copy()
-        df_user["exit_date"] = pd.to_datetime(df_user["entry_date"]) + pd.to_timedelta(np.random.randint(5, 25, 18), unit="D")
+        df_user = df_bm.sample(n=min(18, len(df_bm)), random_state=42).copy()
+        df_user["exit_date"] = pd.to_datetime(df_user["entry_date"]) + pd.to_timedelta(np.random.randint(5, 25, len(df_user)), unit="D")
         df_user["exit_date"] = df_user["exit_date"].dt.strftime("%Y-%m-%d")
 
     # ------------------------------------------------
@@ -242,30 +242,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 3. メイン画面 & 期間フィルターヘッダー
-# ==========================================
-@st.cache_data(ttl=300)
-def load_and_process_data():
-    # --- データ取得処理 ---
-    
-    # データ読み込み完了時刻を記録
-    fetch_time = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S JST")
-    return df_bm, df_user, fetch_time
-
-# データ読み込み（3つの戻り値を確実に受け取る）
-df_bm_all, df_user_all, last_sync_time = load_and_process_data()
-
-# ==========================================
-# メイン画面 & 期間フィルターヘッダー
-# ==========================================
-st.markdown(f"""
-<div class="app-header">
-    <div class="app-title">■ 銘柄選定評価ダッシュボード (選定アルファ検証)</div>
-    <div style="font-size: 12px; color: #9ca3af;">最終同期: {last_sync_time}</div>
-</div>
-""", unsafe_allow_html=True)
-
 # 1. フィルター & 期間選択バー
 f_col1, f_col2, f_col3, f_col4 = st.columns([3, 2, 2, 1])
 
@@ -282,7 +258,7 @@ min_date = min(df_bm_all["entry_date"].min(), df_user_all["entry_date"].min()).d
 max_date = max(df_bm_all["exit_date"].max(), df_user_all["exit_date"].max()).date()
 
 # プリセット日付の計算
-today = datetime.date(2026, 11, 2)
+today = datetime.date.today()
 if preset == "直近1ヶ月":
     start_default = today - datetime.timedelta(days=30)
 elif preset == "直近3ヶ月":
