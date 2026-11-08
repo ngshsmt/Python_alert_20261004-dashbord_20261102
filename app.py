@@ -177,7 +177,7 @@ def load_and_process_data():
                     entry_date = props.get("日付", {}).get("date", {}).get("start")
                     signal = props.get("シグナル", {}).get("select", {}).get("name")
                     close_price = props.get("終値", {}).get("number")
-                    stop_loss = props.get("損切り価格", {}).get("number")
+                    stop_loss = props.get("想定損切り価格", {}).get("number")
                     status_val = props.get("ステータス", {}).get("status", {}).get("name") if props.get("ステータス", {}).get("status") else "未対応"
                     
                     if entry_date and code_match:
@@ -283,7 +283,7 @@ def load_and_process_data():
                     "exit_date": x_date,
                     "entry_price": p_in,
                     "exit_price": p_out if x_date else None,
-                    "stop_loss": row.get("損切り価格", row.get("stop_loss")),
+                    "stop_loss": row.get("想定損切り価格", row.get("stop_loss")),
                     "status": "転記済",
                     "adoption": "採用",
                     "return_pct": ret_pct,
@@ -604,12 +604,12 @@ if not df_bm.empty:
         "adoption": "判定(採用/見送り)",
         "entry_price": "エントリー価格",
         "exit_price": "手仕舞い価格",
-        "stop_loss": "損切り価格",
+        "stop_loss": "想定損切り価格",
         "return_pct": "確定損益率",
         "holding_days": "保有日数"
     })
 else:
-    df_display = pd.DataFrame(columns=["エントリー日付", "手仕舞い日付", "銘柄コード", "シグナル", "判定(採用/見送り)", "エントリー価格", "手仕舞い価格", "損切り価格", "確定損益率", "保有日数"])
+    df_display = pd.DataFrame(columns=["エントリー日付", "手仕舞い日付", "銘柄コード", "シグナル", "判定(採用/見送り)", "エントリー価格", "手仕舞い価格", "想定損切り価格", "確定損益率", "保有日数"])
 
 st.dataframe(
     df_display.sort_values("エントリー日付", ascending=False),
