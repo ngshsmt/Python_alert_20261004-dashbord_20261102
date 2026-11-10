@@ -93,7 +93,7 @@ def run_tracker():
             row += [""] * (19 - len(row))
 
         # カラムマッピング (0始まりインデックス)
-        # B(1): エントリー点灯日付, C(2): エントリー日, D(3): 消灯日付, E(4): 手仕舞い日
+        # B(1): エントリー点灯日付, C(2): エントリー日付, D(3): 消灯日付, E(4): 手仕舞い日付
         # F(5): 銘柄コード, L(11): 想定エントリー価格, M(12): エントリー価格, P(15): 手仕舞い価格
         entry_signal_date = row[1].strip()
         entry_date = row[2].strip()
@@ -107,27 +107,27 @@ def run_tracker():
             continue
 
         # ----------------------------------------------------
-        # A. エントリー追跡：点灯日(B列)があり、エントリー日(C列)または価格(M列)が空欄
+        # A. エントリー追跡：点灯日(B列)があり、エントリー日付(C列)または価格(M列)が空欄
         # ----------------------------------------------------
         if entry_signal_date and (not entry_date or not entry_price):
             print(f"行 {row_num} ({code}): エントリー寄り付き確認中 (点灯日: {entry_signal_date})...")
             trade_date, open_price = find_first_trade_day(code, entry_signal_date)
             
             if trade_date and open_price:
-                # C列（エントリー日）と M列（エントリー価格）をピンポイント更新
+                # C列（エントリー日付）と M列（エントリー価格）をピンポイント更新
                 worksheet.update_acell(f"C{row_num}", trade_date)
                 worksheet.update_acell(f"M{row_num}", open_price)
                 print(f" -> 【エントリー確定】 行 {row_num} ({code}): C列={trade_date}, M列={open_price}")
 
         # ----------------------------------------------------
-        # B. 手仕舞い追跡：消灯日(D列)があり、手仕舞い日(E列)または価格(P列)が空欄
+        # B. 手仕舞い追跡：消灯日(D列)があり、手仕舞い日付(E列)または価格(P列)が空欄
         # ----------------------------------------------------
         if exit_signal_date and (not exit_date or not exit_price):
             print(f"行 {row_num} ({code}): 手仕舞い寄り付き確認中 (消灯日: {exit_signal_date})...")
             trade_date, open_price = find_first_trade_day(code, exit_signal_date)
             
             if trade_date and open_price:
-                # E列（手仕舞い日）と P列（手仕舞い価格）をピンポイント更新
+                # E列（手仕舞い日付）と P列（手仕舞い価格）をピンポイント更新
                 worksheet.update_acell(f"E{row_num}", trade_date)
                 worksheet.update_acell(f"P{row_num}", open_price)
                 print(f" -> 【手仕舞い確定】 行 {row_num} ({code}): E列={trade_date}, P列={open_price}")
