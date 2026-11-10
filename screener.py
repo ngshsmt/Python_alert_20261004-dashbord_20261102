@@ -1,4 +1,4 @@
-# Pythonメインスクリプト（screener.py）_1.0.5
+# Pythonメインスクリプト（screener.py）_1.0.6
 
 import datetime
 import os
@@ -273,7 +273,7 @@ def push_to_notion(result_data, company_name=""):
             "シグナル": {"select": {"name": result_data['signal']}},
             "終値": {"number": result_data['close']},
             "ステータス": {"status": {"name": "未対応"}},
-            "損切り価格": {"number": result_data['st_val']}
+            "想定損切り価格": {"number": result_data['st_val']}
         }
     }
 
