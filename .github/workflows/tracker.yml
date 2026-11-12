@@ -1,4 +1,4 @@
-name: Position Tracker Trigger_v.1.0.2
+name: Position Tracker Trigger_v.1.0.1
 
 on:
   schedule:
