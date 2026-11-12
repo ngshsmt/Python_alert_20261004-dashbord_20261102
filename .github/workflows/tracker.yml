@@ -1,4 +1,4 @@
-name: Position Tracker Trigger
+name: Position Tracker Trigger_v.1.0.1
 
 on:
   schedule:
@@ -28,8 +28,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Create service_account.json from Secret
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
-          echo "${{ secrets.GCP_SA_KEY }}" > service_account.json
+          python -c 'import os; open("service_account.json", "w", encoding="utf-8").write(os.environ["GCP_SA_KEY"
       - name: Run Tracker Script
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
