@@ -1,4 +1,4 @@
-name: Position Tracker Trigger_v.1.0.1
+name: Position Tracker Trigger_v.1.0.2
 
 on:
   schedule:
@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-       - name: Create service_account.json from Secret
+      - name: Create service_account.json from Secret
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
