@@ -1,4 +1,4 @@
-# tracker.py_v1.0.0
+# tracker.py_v1.0.1
 
 import os
 import datetime
@@ -70,7 +70,9 @@ def run_tracker():
         sh = gc.open_by_key(SPREADSHEET_ID)
         worksheet = sh.worksheet(SHEET_NAME)
     except Exception as e:
-        print(f"Google Sheets 接続エラー: {e}")
+        import traceback
+        print(f"Google Sheets 接続エラー [{type(e).__name__}]: {repr(e)}")
+        traceback.print_exc()
         return
 
     # 全データ（A列〜S列）を取得
