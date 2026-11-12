@@ -31,7 +31,7 @@ jobs:
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
         run: |
-          python -c 'import os; open("service_account.json", "w", encoding="utf-8").write(os.environ["GCP_SA_KEY"])
+          python -c 'import os; open("service_account.json", "w", encoding="utf-8").write(os.environ["GCP_SA_KEY"])'
       - name: Run Tracker Script
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
